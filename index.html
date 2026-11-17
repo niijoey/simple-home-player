@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="robots" content="noindex">
+  <title>Simple Home player</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    #player { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <script>
+    // Full-screen YouTube player for the Simple Home TV app.
+    // The TV app shows this page and sends it remote-control commands; YouTube only
+    // allows its player on pages with a web address, which is why this page exists.
+    (function () {
+      var match = location.search.match(/[?&]v=([\w-]{11})(?:&|$)/);
+      var videoId = match && match[1];
+      var player = null;
+
+      function tell(type, extra) {
+        if (window.parent === window) return;
+        var msg = { from: 'simple-home-player', type: type };
+        for (var k in (extra || {})) msg[k] = extra[k];
+        window.parent.postMessage(msg, '*');
+      }
+
+      if (!videoId) { tell('error', { code: 'bad-video-id' }); return; }
+
+      window.onYouTubeIframeAPIReady = function () {
+        player = new YT.Player('player', {
+          videoId: videoId,
+          playerVars: { autoplay: 1, rel: 0, playsinline: 1, iv_load_policy: 3 },
+          events: {
+            onReady: function (e) { e.target.playVideo(); tell('ready'); },
+            onStateChange: function (e) { tell('state', { state: e.data }); },
+            onError: function (e) { tell('error', { code: e.data }); }
+          }
+        });
+      };
+
+      // Commands from the TV app only (never from other pages).
+      window.addEventListener('message', function (e) {
+        if (e.source !== window.parent || !player || !e.data || e.data.to !== 'simple-home-player') return;
+        var cmd = e.data.cmd;
+        if (cmd === 'toggle') {
+          if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
+        } else if (cmd === 'seek' && typeof e.data.by === 'number') {
+          player.seekTo(Math.max(0, player.getCurrentTime() + e.data.by), true);
+        } else if (cmd === 'stop') {
+          player.stopVideo();
+        }
+      });
+
+      var s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = function () { tell('error', { code: 'api-unreachable' }); };
+      document.head.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
